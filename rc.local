@@ -1,0 +1,10 @@
+#! /bin/bash
+
+NAME=dbus-modbus-PZEM-017
+DRIVER=/data/custom/$NAME/service
+SERVICE=/opt/victronenergy/service-templates/$NAME
+
+if [ ! -e "$SERVICE" ]; then
+    mkdir $SERVICE
+    cp -r $DRIVER/* $SERVICE
+fi

@@ -1,0 +1,5 @@
+#!/bin/sh
+echo "*** starting dbus-modbus-suninv ***"
+exec 2>&1
+exec /data/custom/dbus-modbus-suninv/dbus-modbus-suninv.py -s TTY PRODUCT
+
