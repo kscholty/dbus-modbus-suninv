@@ -39,7 +39,7 @@ class DbusSunInvService:
     MAXPOWER = 900
     MODE2DELAY = 240   #4 minutes above SETPOINT in order to switch on the Inverters
     MODE5DELAY = 60*15 #15 Minutes below SETPOINT in order to switch off the Inverters
-    MODE3DELAY = 25    #10 secondes before we start regulating
+    MODE3DELAY = 30    #30 secondes before we start regulating
 
     def __init__(self, tty, address):
         self.devname = os.path.basename(tty)
@@ -49,16 +49,23 @@ class DbusSunInvService:
         self.shelly = ShellySwitch(self.SHELLYNAME)    
         self.state = 0
         self.delayStart = 0       
+        self._dbus = None
+        self.settings = None
         
         #Switch on inverter to ensure that we can detect them...
         self.shelly.switchRelay(True)
         time.sleep(2)
 
+        
         self.dbusconn = dbus.SessionBus() if 'DBUS_SESSION_BUS_ADDRESS' in os.environ else dbus.SystemBus()
+        hasVEBus = self.MPIINAME in self.dbusconn.list_names() 
 
-        if( not self._detectDevice()):
+        if not hasVEBus or not self._detectDevice():
             log.info('No SUNINV detected on %s' % self.devname)
-            sys._exit(1)
+            self.destroy()
+            sys.exit(1)
+
+        
 
         self._initSettings()
         self.watchdog = watchdog.Watchdog()
@@ -68,9 +75,7 @@ class DbusSunInvService:
         self._readConfig()
         self._initValues()
 
-        self._dbus = VeDbusService("com.victronenergy.suninv-%s" % (self.devname), self.dbusconn)
-        
-        
+        self._dbus = VeDbusService("com.victronenergy.suninv-%s" % (self.devname), self.dbusconn)        
         
         self._initDevice()
         self._MPIIPower = VeDbusItemImport(self.dbusconn,self.MPIINAME, self.POWERPATH,createsignal=False)
@@ -82,9 +87,9 @@ class DbusSunInvService:
 
 
     def destroy(self):
-        if self.dbus:
-            self.dbus.__del__()
-            self.dbus = None
+        if self._dbus:
+            self._dbus.__del__()
+            self._dbus = None
         if self.settings:
             self.settings._settings = None
             self.settings = None        
@@ -158,15 +163,14 @@ class DbusSunInvService:
 
     def _detectDevice(self):        
         success = False
-        hasVEBus = False        
-        try:            
-            hasVEBus = self.MPIINAME in self.dbusconn.list_names() 
-            if hasVEBus: success = self.suninv.checkEquipment()  
+                
+        try:                        
+            success = self.suninv.checkEquipment()  
                           
         except Exception as e:
             log.error('Exeption while detecting device: %s' % e)   
         
-        return (success and hasVEBus)   
+        return (success)   
 
     def _get_text(self, path, value):
         shortPath = os.path.basename(path)        
@@ -263,14 +267,14 @@ class DbusSunInvService:
                     newSetting = 0
                 elif newSetting > self.MAXPOWER:
                     newSetting = self.MAXPOWER
-                if abs(newSetting - self.powerSetting) > self.THRESHOLD or (newSetting != self.powerSetting and (newSetting == 0 or newSetting == self.MAXPOWER)):
+                if abs(newSetting - self.powerSetting) > self.THRESHOLD or (newSetting != self.powerSetting and (newSetting == 0 or newSetting == self.MAXPOWER)) or (now-self.lastUpdate > 30):
                     if self.state == 4: self.suninv.setPowerPercent(newSetting) #send value only if in regulation mode
                     self.powerSetting = newSetting
+                    self.lastUpdate = now
                     log.debug("Sending %d to Inverter\n" % newSetting)
-
                 else:
                     log.debug("No Update needed. L1: %d current setting is %d, new is %d\n" % (self.lastPower,self.powerSetting,newSetting))
-                self.lastUpdate = now
+                
                 self._dbus['/Ac/PowerSetting'] = self.powerSetting
                 self._dbus['/Ac/ExtPower'] = self.lastPower
                 self._dbus['/ErrorCode'] = 0
@@ -315,7 +319,7 @@ def main():
 
     logging.basicConfig(level=(logging.DEBUG if opts.debug else logging.INFO))
 
-    signal.signal(signal.SIGINT, lambda s, f: sys._exit(1))
+    signal.signal(signal.SIGINT, lambda s, f: sys.exit(1))
     faulthandler.register(signal.SIGUSR1)
 
     dbus.mainloop.glib.threads_init()

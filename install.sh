@@ -24,7 +24,7 @@ fi
 if  [ ! -e /opt/victronenergy/service-templates/$DIR ] 
 then
   /bin/mkdir /opt/victronenergy/service-templates/$DIR
-  /bin/cp -r $PATH/service/* to /opt/victronenergy/service-templates/$DIR/
+  /bin/cp -r $PATH/service/* /opt/victronenergy/service-templates/$DIR/
 else 
   echo Service-template exists already
 fi
